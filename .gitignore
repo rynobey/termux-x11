@@ -39,3 +39,10 @@ github.properties
 
 *.cxx
 app/.cxx/*
+
+# Vortek integration (feat/vortek-integration): closed-source libs + open client
+# archive — each developer extracts locally via scripts/extract-vortek-libs.sh.
+# *.so above already covers the .so files; this is for clarity + the tzst archive.
+app/src/main/jniLibs/arm64-v8a/libvortekrenderer.so
+app/src/main/jniLibs/arm64-v8a/libwinlator.so
+third_party/

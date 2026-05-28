@@ -1,0 +1,133 @@
+# Vortek branch CI — fork-side workflow.
+#
+# Builds the Termux-X11 APK on this fork's feat/vortek-integration branch (and PRs into
+# it), with layered caching modelled on the Podroid build pipeline: cache layers ordered
+# from "least likely to change" to "most likely" so an isolated edit only invalidates
+# its own layer.
+#
+# Signing: app/testkey_untrusted.jks is committed and used by signingConfigs.debug, so
+# the produced APKs always have the same signature — `adb install -r` upgrades work
+# across builds/commits/branches (same trick as Podroid's committed debug keystore).
+#
+# Upstream's debug_build.yml is intentionally NOT modified so future upstream merges
+# stay clean — this workflow is fork-scoped.
+
+name: Vortek Build
+
+on:
+  push:
+    branches:
+      - feat/vortek-integration
+    paths-ignore:
+      - '**.md'
+      - 'img/**'
+  pull_request:
+    branches:
+      - feat/vortek-integration
+      - master
+    paths-ignore:
+      - '**.md'
+      - 'img/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (Vortek + arm64-v8a primary)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # -------------------------------------------------------------------------
+      # Layered caches — ordered: least likely → most likely to invalidate
+      # -------------------------------------------------------------------------
+
+      # Layer 1: Winlator APK (~150 MB, pinned to v11.0 → effectively never invalidates)
+      - name: Cache Winlator 11.0 APK
+        id: cache-winlator-apk
+        uses: actions/cache@v5
+        with:
+          path: /tmp/Winlator_11.0.apk
+          key: winlator-apk-v11.0.0
+
+      - name: Extract Vortek libs from Winlator APK
+        run: ./scripts/extract-vortek-libs.sh /tmp/Winlator_11.0.apk
+
+      # Layer 2: Gradle deps/wrapper (invalidates when gradle files change)
+      - name: Cache Gradle deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', 'gradle.properties', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      # Layer 3: Native build outputs — the Xorg/Lorie compile is by far the heaviest
+      # part of CI. Invalidates only when submodule SHAs change, the top-level
+      # CMakeLists changes, or the lorie/ source changes (our Phase-2 area).
+      - name: Cache native build (Xorg/Lorie/.cxx)
+        uses: actions/cache@v5
+        with:
+          path: |
+            app/.cxx
+            app/build/intermediates/cxx
+          key: ${{ runner.os }}-cxx-${{ hashFiles('.gitmodules', 'app/src/main/cpp/CMakeLists.txt', 'app/src/main/cpp/lorie/**') }}
+          restore-keys: |
+            ${{ runner.os }}-cxx-
+
+      # -------------------------------------------------------------------------
+      # Build (all ABI splits — upstream parity; we upload only arm64-v8a artifacts
+      # since Vortek libs are arm64-only)
+      # -------------------------------------------------------------------------
+      - name: Build debug APKs
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build Termux companion package
+        run: ./build_termux_package
+
+      # -------------------------------------------------------------------------
+      # Artifacts
+      # -------------------------------------------------------------------------
+      - name: Upload arm64-v8a APK (Vortek target)
+        uses: actions/upload-artifact@v7
+        with:
+          name: termux-x11-vortek-arm64-v8a-debug
+          path: ./app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+
+      - name: Upload universal APK (contains all ABIs incl. arm64 + Vortek)
+        uses: actions/upload-artifact@v7
+        with:
+          name: termux-x11-vortek-universal-debug
+          path: ./app/build/outputs/apk/debug/app-universal-debug.apk
+
+      - name: Upload Termux companion package
+        uses: actions/upload-artifact@v7
+        with:
+          name: termux-x11-companion
+          path: |
+            ./app/build/outputs/apk/debug/termux-x11-*-all.deb
+            ./app/build/outputs/apk/debug/termux-x11-*-any.pkg.tar.xz
+
+      - name: Upload unstripped libs (for ndk-stack)
+        uses: actions/upload-artifact@v7
+        with:
+          name: termux-x11-vortek-unstripped-libs
+          path: ./app/build/intermediates/cxx/Debug/*
