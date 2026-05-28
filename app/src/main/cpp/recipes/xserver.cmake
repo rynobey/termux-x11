@@ -281,7 +281,8 @@ add_library(Xlorie SHARED
         "lorie/InputXKB.c"
         "lorie/renderer.c"
         "lorie/buffer.c"
-        "lorie/activity.c")
+        "lorie/activity.c"
+        "lorie/vortek_bridge.c")
 target_include_directories(Xlorie PRIVATE ${inc} "libxcvt/include")
 target_link_options(Xlorie PRIVATE "-Wl,--as-needed" "-Wl,--no-undefined" "-fvisibility=hidden")
 target_link_libraries(Xlorie "-Wl,--whole-archive" ${XSERVER_LIBS} "-Wl,--no-whole-archive" android mediandk log m z EGL GLESv2)

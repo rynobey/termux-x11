@@ -2,13 +2,9 @@ package com.winlator.xenvironment.components;
 
 import android.net.LocalServerSocket;
 import android.net.LocalSocket;
-import android.system.Os;
-import android.system.OsConstants;
-import android.system.UnixSocketAddress;
 import android.util.Log;
 
 import androidx.annotation.Keep;
-import androidx.annotation.RequiresApi;
 
 import java.io.File;
 import java.io.FileDescriptor;
@@ -18,24 +14,33 @@ import java.lang.reflect.Method;
 /**
  * Accepts Vortek-client connections on a filesystem-path Unix socket.
  *
- * Wire protocol per Pt.1 of the Vortek Internals RE: client connects, sends a single
- * byte == 1 as handshake, then the server creates two ashmem regions (server ring
- * 4 MiB, client ring 256 KiB) and sends both fds back via sendmsg/SCM_RIGHTS. All
- * of that happens inside the closed native createVkContext(clientFd, options); our
- * job is just to listen, accept, read the handshake, and hand the fd in.
+ * Wire protocol per Pt.1 of the Vortek Internals RE: client connects, sends a
+ * single byte == 1 as handshake; the server then creates two ashmem regions
+ * (server ring 4 MiB, client ring 256 KiB) and sends both fds back via
+ * sendmsg/SCM_RIGHTS. All of that happens inside the closed native
+ * createVkContext(clientFd, options); our job is just to listen, accept, read
+ * the handshake byte, and hand the accepted fd in.
  *
- * Socket path is FILESYSTEM-namespace (not abstract). The open Vortek client
- * (brunodev85/vortek) must be recompiled with VORTEK_SERVER_PATH set to whatever
- * path is passed to the constructor (default suggestion: app filesDir + "/vortek/V0").
+ * Filesystem-namespace binding goes through {@link #bindUnixServerSocket} —
+ * a small JNI helper in {@code app/src/main/cpp/lorie/vortek_bridge.c} built
+ * into libXlorie.so. Android's public Java API (LocalServerSocket(String))
+ * binds only in the abstract namespace; the Vortek client uses sun_path
+ * (filesystem), so we do socket()+bind()+listen() in C and wrap the returned
+ * int fd into a {@link LocalServerSocket} via reflection on FileDescriptor.
  *
- * RequiresApi 33 because we use android.system.UnixSocketAddress. The user's target
- * (Pixel 10 / Android 16) far exceeds this. For pre-33 support we'd need a small NDK
- * helper to socket()+bind()+listen() with a sockaddr_un.
+ * The open Vortek client (brunodev85/vortek) must be recompiled with
+ * VORTEK_SERVER_PATH set to whatever path is passed to this constructor.
  */
 @Keep
-@RequiresApi(33)
 public class VortekServer {
     private static final String TAG = "VortekServer";
+
+    static {
+        // libXlorie.so is the Termux-X11 native lib; we extended it with the
+        // vortek_bridge.c JNI helper. Loading is idempotent if LorieView has
+        // already loaded it on the UI thread.
+        System.loadLibrary("Xlorie");
+    }
 
     private final String socketPath;
     private final VortekRendererComponent renderer;
@@ -68,9 +73,16 @@ public class VortekServer {
             File f = new File(socketPath);
             File parent = f.getParentFile();
             if (parent != null) parent.mkdirs();
-            f.delete(); // clear any stale socket file
-            serverSocket = bindFilesystemSocket(socketPath);
-            Log.i(TAG, "listening on " + socketPath);
+            // vortek_bridge.c does socket()+bind()+listen() and returns the listening fd
+            // (or a negative errno on failure).
+            int fd = bindUnixServerSocket(socketPath);
+            if (fd < 0) {
+                Log.e(TAG, "bindUnixServerSocket(" + socketPath + ") failed, errno=" + (-fd));
+                running = false;
+                return;
+            }
+            serverSocket = new LocalServerSocket(wrapFd(fd));
+            Log.i(TAG, "listening on " + socketPath + " (fd=" + fd + ")");
         } catch (Exception e) {
             Log.e(TAG, "bind failed on " + socketPath + ": " + e);
             running = false;
@@ -86,13 +98,6 @@ public class VortekServer {
         }
     }
 
-    private static LocalServerSocket bindFilesystemSocket(String path) throws Exception {
-        FileDescriptor fd = Os.socket(OsConstants.AF_UNIX, OsConstants.SOCK_STREAM, 0);
-        Os.bind(fd, UnixSocketAddress.createFileSystem(path));
-        Os.listen(fd, 8);
-        return new LocalServerSocket(fd);
-    }
-
     private void handleClient(LocalSocket client) {
         try {
             InputStream in = client.getInputStream();
@@ -104,11 +109,13 @@ public class VortekServer {
             }
             int clientFd = getInt(client.getFileDescriptor());
             // createVkContext (in libvortekrenderer.so) creates the two shm rings,
-            // sends their fds back over the accepted socket via SCM_RIGHTS, and spawns
-            // its own worker thread. We can return from this Java thread once it returns.
+            // sends their fds back over the accepted socket via SCM_RIGHTS, and
+            // spawns its own worker thread. We can return from this Java thread
+            // once it returns.
             long ctx = renderer.createContextForClient(clientFd);
             if (ctx > 0) {
-                Log.i(TAG, "Vortek context created: ptr=0x" + Long.toHexString(ctx) + " clientFd=" + clientFd);
+                Log.i(TAG, "Vortek context created: ptr=0x" + Long.toHexString(ctx)
+                        + " clientFd=" + clientFd);
                 // TODO Phase 2: track ctx <-> client to call destroyVkContext on socket close.
             } else {
                 Log.e(TAG, "createVkContext returned " + ctx);
@@ -120,10 +127,24 @@ public class VortekServer {
         }
     }
 
-    /** Extract the int fd from a FileDescriptor (Android-internal API; stable since API 1). */
+    /** Bind a filesystem-namespace AF_UNIX SOCK_STREAM listening socket.
+     *  Implemented in {@code app/src/main/cpp/lorie/vortek_bridge.c} (libXlorie.so).
+     *  Returns the listening fd on success, or a negative errno on failure. */
+    private static native int bindUnixServerSocket(String path);
+
+    /** Read the int fd from an existing FileDescriptor (used for the accepted client). */
     private static int getInt(FileDescriptor fd) throws Exception {
         Method m = FileDescriptor.class.getDeclaredMethod("getInt$");
         m.setAccessible(true);
         return (Integer) m.invoke(fd);
+    }
+
+    /** Wrap an int fd into a FileDescriptor for {@link LocalServerSocket}. */
+    private static FileDescriptor wrapFd(int fd) throws Exception {
+        FileDescriptor fileDescriptor = new FileDescriptor();
+        Method setInt = FileDescriptor.class.getDeclaredMethod("setInt$", int.class);
+        setInt.setAccessible(true);
+        setInt.invoke(fileDescriptor, fd);
+        return fileDescriptor;
     }
 }
