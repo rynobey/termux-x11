@@ -37,11 +37,13 @@ import android.service.notification.StatusBarNotification;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Display;
+import android.view.DisplayCutout;
 import android.view.DragEvent;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.PointerIcon;
+import android.view.RoundedCorner;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
@@ -167,6 +169,34 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.main_activity);
 
         frm = findViewById(R.id.frame);
+        // padRoundedCorners: mirror the camera-cutout inset on the opposite edge
+        // so the X canvas doesn't extend into the device's rounded corners. The
+        // cutout side is already protected by Android's safe-inset; we add a
+        // matching pad on the opposite side. Rotation handled automatically:
+        // Android re-fires this listener with the new corner positions.
+        frm.setOnApplyWindowInsetsListener((v, insets) -> {
+            if (!prefs.padRoundedCorners.get()) {
+                v.setPadding(0, 0, 0, 0);
+                return insets;
+            }
+            int tl = 0, tr = 0, bl = 0, br = 0;
+            if (SDK_INT >= VERSION_CODES.S) {
+                RoundedCorner c;
+                c = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT);     if (c != null) tl = c.getRadius();
+                c = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_RIGHT);    if (c != null) tr = c.getRadius();
+                c = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT);  if (c != null) bl = c.getRadius();
+                c = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT); if (c != null) br = c.getRadius();
+            }
+            DisplayCutout cut = (SDK_INT >= VERSION_CODES.P) ? insets.getDisplayCutout() : null;
+            int padL = 0, padT = 0, padR = 0, padB = 0;
+            if      (cut != null && cut.getSafeInsetTop()    > 0) padB = Math.max(bl, br);
+            else if (cut != null && cut.getSafeInsetBottom() > 0) padT = Math.max(tl, tr);
+            else if (cut != null && cut.getSafeInsetLeft()   > 0) padR = Math.max(tr, br);
+            else if (cut != null && cut.getSafeInsetRight()  > 0) padL = Math.max(tl, bl);
+            else                                                  padB = Math.max(bl, br); // no cutout — pad bottom of current orientation
+            v.setPadding(padL, padT, padR, padB);
+            return insets;
+        });
         findViewById(R.id.preferences_button).setOnClickListener((l) -> startActivity(new Intent(this, LoriePreferences.class) {{ setAction(Intent.ACTION_MAIN); }}));
         findViewById(R.id.help_button).setOnClickListener((l) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/termux/termux-x11/blob/master/README.md#running-graphical-applications"))));
         findViewById(R.id.exit_button).setOnClickListener((l) -> finish());
@@ -581,6 +611,10 @@ public class MainActivity extends AppCompatActivity {
 
         onWindowFocusChanged(hasWindowFocus());
         LorieView lorieView = getLorieView();
+
+        // Re-run the rounded-corner inset calc so toggling padRoundedCorners
+        // takes effect without needing a rotate or app restart.
+        if (frm != null) frm.requestApplyInsets();
 
         mInputHandler.reloadPreferences(prefs);
         lorieView.reloadPreferences(prefs);

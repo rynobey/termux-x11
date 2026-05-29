@@ -22,6 +22,7 @@
         <SwitchPreferenceCompat app:key="fullscreen" app:defaultValue="false" />
         <ListPreference app:key="forceOrientation" app:defaultValue="auto" app:entries="@array/forceOrientationVariants" app:entryValues="@array/forceOrientationVariants" />
         <SwitchPreferenceCompat app:key="hideCutout" app:defaultValue="false" />
+        <SwitchPreferenceCompat app:key="padRoundedCorners" app:defaultValue="false" />
         <SwitchPreferenceCompat app:defaultValue="true" app:key="keepScreenOn" />
     </PreferenceScreen>
     <PreferenceScreen app:key="pointer">

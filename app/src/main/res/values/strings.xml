@@ -50,6 +50,8 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="lorie_pref_fullscreen_summary">Toggle immersive mode in your device display</string>
     <string name="lorie_pref_forceOrientation">Screen orientation</string>
     <string name="lorie_pref_hideCutout">Hide display cutout (if any)</string>
+    <string name="lorie_pref_padRoundedCorners">Pad rounded screen corners</string>
+    <string name="lorie_pref_padRoundedCorners_summary">Mirror the camera-cutout inset on the opposite edge so the desktop avoids rounded corners</string>
     <string name="lorie_pref_keepScreenOn">Keep Screen On</string>
 
     <string name="lorie_pref_touchMode">Touchscreen input mode</string>
