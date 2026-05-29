@@ -24,6 +24,7 @@ import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Insets;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
@@ -44,11 +45,13 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.PointerIcon;
 import android.view.RoundedCorner;
+import android.view.Surface;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.view.Window;
+import android.view.WindowInsets;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
@@ -170,10 +173,9 @@ public class MainActivity extends AppCompatActivity {
 
         frm = findViewById(R.id.frame);
         // padRoundedCorners: mirror the camera-cutout inset on the opposite edge
-        // so the X canvas doesn't extend into the device's rounded corners. The
-        // cutout side is already protected by Android's safe-inset; we add a
-        // matching pad on the opposite side. Rotation handled automatically:
-        // Android re-fires this listener with the new corner positions.
+        // so the X canvas doesn't extend into the device's rounded corners.
+        // Rotation handled automatically — Android re-fires this listener after
+        // each rotation with the new corner positions.
         frm.setOnApplyWindowInsetsListener((v, insets) -> {
             if (!prefs.padRoundedCorners.get()) {
                 v.setPadding(0, 0, 0, 0);
@@ -187,13 +189,40 @@ public class MainActivity extends AppCompatActivity {
                 c = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT);  if (c != null) bl = c.getRadius();
                 c = insets.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT); if (c != null) br = c.getRadius();
             }
-            DisplayCutout cut = (SDK_INT >= VERSION_CODES.P) ? insets.getDisplayCutout() : null;
+            // Locate the cutout edge. getInsetsIgnoringVisibility(displayCutout())
+            // reports the cutout's edge even when the window has been shrunk
+            // to avoid it — important in landscape under
+            // LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT, where the simpler
+            // getDisplayCutout() returns null.
+            int cL = 0, cT = 0, cR = 0, cB = 0;
+            if (SDK_INT >= VERSION_CODES.R) {
+                Insets ci = insets.getInsetsIgnoringVisibility(WindowInsets.Type.displayCutout());
+                cL = ci.left; cT = ci.top; cR = ci.right; cB = ci.bottom;
+            } else if (SDK_INT >= VERSION_CODES.P) {
+                DisplayCutout dc = insets.getDisplayCutout();
+                if (dc != null) {
+                    cL = dc.getSafeInsetLeft();  cT = dc.getSafeInsetTop();
+                    cR = dc.getSafeInsetRight(); cB = dc.getSafeInsetBottom();
+                }
+            }
+            // Still no cutout edge? Fall back to device rotation. Assumes the
+            // selfie camera sits at the device's natural-portrait top — true
+            // for typical phones including Pixel 10.
+            if (cL == 0 && cT == 0 && cR == 0 && cB == 0) {
+                int rotation = (v.getDisplay() != null)
+                        ? v.getDisplay().getRotation() : Surface.ROTATION_0;
+                switch (rotation) {
+                    case Surface.ROTATION_0:   cT = 1; break;
+                    case Surface.ROTATION_90:  cL = 1; break;
+                    case Surface.ROTATION_180: cB = 1; break;
+                    case Surface.ROTATION_270: cR = 1; break;
+                }
+            }
             int padL = 0, padT = 0, padR = 0, padB = 0;
-            if      (cut != null && cut.getSafeInsetTop()    > 0) padB = Math.max(bl, br);
-            else if (cut != null && cut.getSafeInsetBottom() > 0) padT = Math.max(tl, tr);
-            else if (cut != null && cut.getSafeInsetLeft()   > 0) padR = Math.max(tr, br);
-            else if (cut != null && cut.getSafeInsetRight()  > 0) padL = Math.max(tl, bl);
-            else                                                  padB = Math.max(bl, br); // no cutout — pad bottom of current orientation
+            if      (cT > 0) padB = Math.max(bl, br);
+            else if (cB > 0) padT = Math.max(tl, tr);
+            else if (cL > 0) padR = Math.max(tr, br);
+            else if (cR > 0) padL = Math.max(tl, bl);
             v.setPadding(padL, padT, padR, padB);
             return insets;
         });
