@@ -105,6 +105,10 @@ public class MainActivity extends AppCompatActivity {
     static InputMethodManager inputMethodManager;
     private static boolean showIMEWhileExternalConnected = true;
     private static boolean externalKeyboardConnected = false;
+    /** When true, force-show the soft IME whenever no external keyboard is
+        present and the activity is in foreground. Synced from the
+        {@code autoShowSoftKeyboard} preference. */
+    private static boolean autoShowSoftKeyboard = false;
     private View.OnKeyListener mLorieKeyListener;
     private boolean filterOutWinKey = false;
     boolean useTermuxEKBarBehaviour = false;
@@ -285,9 +289,6 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.exit_button).setOnClickListener((l) -> finish());
 
         LorieView lorieView = findViewById(R.id.lorieView);
-        // (setZOrderMediaOverlay is called in LorieView's constructor —
-        // Android requires it before window-attach, which has already
-        // happened by the time setContentView returns here.)
         View lorieParent = (View) lorieView.getParent();
 
         mInputHandler = new TouchInputHandler(this, new InputEventSender(lorieView));
@@ -722,6 +723,8 @@ public class MainActivity extends AppCompatActivity {
 
         useTermuxEKBarBehaviour = prefs.useTermuxEKBarBehaviour.get();
         showIMEWhileExternalConnected = prefs.showIMEWhileExternalConnected.get();
+        autoShowSoftKeyboard = prefs.autoShowSoftKeyboard.get();
+        maybeAutoShowSoftKeyboard();
 
         findViewById(R.id.mouse_buttons).setVisibility(prefs.showMouseHelper.get() && "1".equals(prefs.touchMode.get()) && LorieView.connected() ? View.VISIBLE : View.GONE);
         showMouseAuxButtons(prefs.showMouseHelper.get());
@@ -748,6 +751,7 @@ public class MainActivity extends AppCompatActivity {
 
         setTerminalToolbarView();
         getLorieView().requestFocus();
+        maybeAutoShowSoftKeyboard();
     }
 
     @Override
@@ -1036,5 +1040,25 @@ public class MainActivity extends AppCompatActivity {
         if (connected && !showIMEWhileExternalConnected)
             inputMethodManager.hideSoftInputFromWindow(getWindow().getDecorView().getRootView().getWindowToken(), 0);
         getLorieView().requestFocus();
+        // External just went away — auto-show the soft IME if the user
+        // wants it always present. (When connected, we leave it to the
+        // existing showIMEWhileExternalConnected logic above.)
+        if (!connected) maybeAutoShowSoftKeyboard();
+    }
+
+    /** If the auto-show-soft-keyboard pref is on AND no external (hardware)
+        keyboard is connected, force-show the soft IME. Called after
+        lifecycle events that could leave the keyboard hidden: onResume,
+        external-keyboard disconnect, pref changes. Uses SHOW_FORCED so
+        the IME stays visible even on configurations that would normally
+        hide it (e.g. landscape default behaviour). */
+    private void maybeAutoShowSoftKeyboard() {
+        if (!autoShowSoftKeyboard || externalKeyboardConnected) return;
+        if (inputMethodManager == null) return;
+        LorieView lv = getLorieView();
+        if (lv != null) lv.requestFocus();
+        inputMethodManager.showSoftInput(
+            lv != null ? lv : getWindow().getDecorView(),
+            InputMethodManager.SHOW_FORCED);
     }
 }

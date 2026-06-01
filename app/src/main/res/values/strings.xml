@@ -76,6 +76,8 @@ E.g. <b>META</b> for <i>META key</i>, \n
     <string name="lorie_pref_showAdditionalKbd_summary">Show keyboard with additional keys.</string>
     <string name="lorie_pref_showIMEWhileExternalConnected">Show IME with external keyboard</string>
     <string name="lorie_pref_showIMEWhileExternalConnected_summary">Show software keyboard while hardware keyboard is connected.</string>
+    <string name="lorie_pref_autoShowSoftKeyboard">Auto-show soft keyboard</string>
+    <string name="lorie_pref_autoShowSoftKeyboard_summary">Keep the soft keyboard always visible while termux-x11 is in foreground, unless an external (hardware) keyboard is connected.</string>
     <string name="lorie_pref_preferScancodes">Prefer scancodes when possible</string>
     <string name="lorie_pref_preferScancodes_summary">Let X server handle hardware keyboard layout (with DE settings or setxkbmap).</string>
     <string name="lorie_pref_hardwareKbdScancodesWorkaround">Hardware keyboard scancodes workaround</string>
