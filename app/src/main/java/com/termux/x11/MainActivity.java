@@ -874,8 +874,13 @@ public class MainActivity extends AppCompatActivity {
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
 
-        if (newConfig.orientation != orientation)
+        if (newConfig.orientation != orientation) {
             inputMethodManager.hideSoftInputFromWindow(getWindow().getDecorView().getRootView().getWindowToken(), 0);
+            // If the user wants the soft keyboard always visible, re-show
+            // it after the orientation flip settles. Without the delay the
+            // call races the hide above and the IME never reappears.
+            handler.postDelayed(this::maybeAutoShowSoftKeyboard, 250);
+        }
 
         orientation = newConfig.orientation;
         setTerminalToolbarView();
