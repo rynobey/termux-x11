@@ -1101,18 +1101,30 @@ public class MainActivity extends AppCompatActivity {
         // padding (stale hole rect), shrinking the X canvas to a sliver.
         if (frm != null) {
             frm.requestApplyInsets();
-            // The IME hide animates (~250-350ms). The listener fires during
-            // the animation, but the post-animation state isn't always
-            // re-evaluated, leaving stale padding. Without this delayed
-            // retry the user has to tap the X canvas to force a layout pass.
-            handler.postDelayed(() -> {
-                if (frm != null) {
-                    frm.requestApplyInsets();
-                    frm.requestLayout();
-                }
-                LorieView lv = getLorieView();
-                if (lv != null) lv.invalidate();
-            }, 400);
+            // The IME hide animates and its duration varies by device
+            // animation scale (0 to 2x by user setting), so any single
+            // delayed retry is fragile — it lands "every second time"
+            // depending on animation speed. Fire several retries across
+            // the realistic animation-end window, each cheap:
+            for (int delay : new int[]{ 200, 450, 800, 1300 }) {
+                handler.postDelayed(() -> {
+                    if (frm != null) {
+                        frm.requestApplyInsets();
+                        frm.requestLayout();
+                    }
+                    LorieView lv = getLorieView();
+                    if (lv != null) {
+                        lv.requestLayout();
+                        lv.invalidate();
+                        // Re-fire the X server's surfaceChanged so it
+                        // re-pushes the (now-correct) bounds to clients.
+                        // Without this the X server may have cached the
+                        // pre-hide size and tap-to-refresh is the only
+                        // user-visible fix.
+                        lv.triggerCallback();
+                    }
+                }, delay);
+            }
         }
     }
 
