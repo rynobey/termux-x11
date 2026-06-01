@@ -1099,7 +1099,21 @@ public class MainActivity extends AppCompatActivity {
         // Force the insets listener to re-evaluate. Without this, after a
         // hideSoftInputFromWindow the layout sometimes keeps the previous
         // padding (stale hole rect), shrinking the X canvas to a sliver.
-        if (frm != null) frm.requestApplyInsets();
+        if (frm != null) {
+            frm.requestApplyInsets();
+            // The IME hide animates (~250-350ms). The listener fires during
+            // the animation, but the post-animation state isn't always
+            // re-evaluated, leaving stale padding. Without this delayed
+            // retry the user has to tap the X canvas to force a layout pass.
+            handler.postDelayed(() -> {
+                if (frm != null) {
+                    frm.requestApplyInsets();
+                    frm.requestLayout();
+                }
+                LorieView lv = getLorieView();
+                if (lv != null) lv.invalidate();
+            }, 400);
+        }
     }
 
     /** If the auto-show-soft-keyboard pref is on AND no external (hardware)
