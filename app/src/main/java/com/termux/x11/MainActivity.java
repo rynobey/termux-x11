@@ -198,14 +198,27 @@ public class MainActivity extends AppCompatActivity {
             // transparent area is in screen pixels. Pad so the X canvas
             // occupies exactly that rect; the rounded-corner path resumes
             // when _holeRect is cleared (IME hidden or non-split session).
+            //
+            // The broadcast carries SCREEN-px coords. The view we're padding
+            // (frm) may be letterboxed/offset from screen origin (Pixel 10
+            // landscape puts termux-x11 at screen x=173+ with a 1080-wide
+            // app bounds). Convert screen-px → view-local-px before computing
+            // padding, otherwise the values get clamped to garbage and you
+            // see no resize at all.
             if (_holeRect != null && prefs.enableExternalHoleMode.get()) {
-                int screenW = v.getRootView().getWidth();
-                int screenH = v.getRootView().getHeight();
-                v.setPadding(
-                    _holeRect.left,
-                    _holeRect.top,
-                    screenW - _holeRect.right,
-                    screenH - _holeRect.bottom);
+                int[] viewOrigin = new int[2];
+                v.getLocationOnScreen(viewOrigin);
+                int viewW = v.getWidth();
+                int viewH = v.getHeight();
+                int padL = Math.max(0, _holeRect.left   - viewOrigin[0]);
+                int padT = Math.max(0, _holeRect.top    - viewOrigin[1]);
+                int padR = Math.max(0, (viewOrigin[0] + viewW) - _holeRect.right);
+                int padB = Math.max(0, (viewOrigin[1] + viewH) - _holeRect.bottom);
+                Log.d("HoleLayout", "applying pad: hole=" + _holeRect
+                    + " viewOrigin=(" + viewOrigin[0] + "," + viewOrigin[1] + ")"
+                    + " viewSize=(" + viewW + "x" + viewH + ")"
+                    + " pad=(" + padL + "," + padT + "," + padR + "," + padB + ")");
+                v.setPadding(padL, padT, padR, padB);
                 return insets;
             }
             if (!prefs.padRoundedCorners.get()) {
@@ -263,8 +276,15 @@ public class MainActivity extends AppCompatActivity {
         // is alive — and only acts when enableExternalHoleMode is on.
         _holeReceiver = new BroadcastReceiver() {
             @Override public void onReceive(Context ctx, Intent intent) {
-                if (!prefs.enableExternalHoleMode.get()) return;
+                boolean prefOn = prefs.enableExternalHoleMode.get();
                 boolean active = intent.getBooleanExtra("active", false);
+                Log.d("HoleLayout", "broadcast received: prefOn=" + prefOn
+                    + " active=" + active
+                    + " rect=(" + intent.getIntExtra("rect_left", 0) + ","
+                    + intent.getIntExtra("rect_top", 0) + ","
+                    + intent.getIntExtra("rect_right", 0) + ","
+                    + intent.getIntExtra("rect_bottom", 0) + ")");
+                if (!prefOn) return;
                 if (active) {
                     _holeRect = new Rect(
                         intent.getIntExtra("rect_left",   0),
