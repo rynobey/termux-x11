@@ -25,6 +25,7 @@ import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Insets;
+import android.graphics.Rect;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Build.VERSION_CODES;
@@ -82,8 +83,19 @@ public class MainActivity extends AppCompatActivity {
     public static final String ACTION_STOP = "com.termux.x11.ACTION_STOP";
     public static final String ACTION_CUSTOM = "com.termux.x11.ACTION_CUSTOM";
 
+    /** Broadcast from a compatible IME (e.g. Unexpected Keyboard split mode)
+        carrying the rect (in screen pixels) where the IME is transparent
+        and the X canvas should render. Toggle this app's response via the
+        enableExternalHoleMode preference. */
+    public static final String ACTION_HOLE_LAYOUT =
+        "com.rynobey.uxk.HOLE_LAYOUT_CHANGED";
+
     public static Handler handler = new Handler();
     FrameLayout frm;
+    /** Hole rectangle reported by a compatible IME (screen px). Null when
+        inactive (no IME claiming a hole, or the receiver isn't enabled). */
+    private Rect _holeRect = null;
+    private BroadcastReceiver _holeReceiver = null;
     private TouchInputHandler mInputHandler;
     protected ICmdEntryInterface service = null;
     public TermuxX11ExtraKeys mExtraKeys;
@@ -177,6 +189,21 @@ public class MainActivity extends AppCompatActivity {
         // Rotation handled automatically — Android re-fires this listener after
         // each rotation with the new corner positions.
         frm.setOnApplyWindowInsetsListener((v, insets) -> {
+            // External-hole-mode takes priority: a compatible IME (e.g. the
+            // Unexpected Keyboard split mode) has told us where its
+            // transparent area is in screen pixels. Pad so the X canvas
+            // occupies exactly that rect; the rounded-corner path resumes
+            // when _holeRect is cleared (IME hidden or non-split session).
+            if (_holeRect != null && prefs.enableExternalHoleMode.get()) {
+                int screenW = v.getRootView().getWidth();
+                int screenH = v.getRootView().getHeight();
+                v.setPadding(
+                    _holeRect.left,
+                    _holeRect.top,
+                    screenW - _holeRect.right,
+                    screenH - _holeRect.bottom);
+                return insets;
+            }
             if (!prefs.padRoundedCorners.get()) {
                 v.setPadding(0, 0, 0, 0);
                 return insets;
@@ -226,6 +253,33 @@ public class MainActivity extends AppCompatActivity {
             v.setPadding(padL, padT, padR, padB);
             return insets;
         });
+
+        // Listen for split-keyboard hole-layout broadcasts. Registered at
+        // runtime (not in manifest) so it's only live while the activity
+        // is alive — and only acts when enableExternalHoleMode is on.
+        _holeReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context ctx, Intent intent) {
+                if (!prefs.enableExternalHoleMode.get()) return;
+                boolean active = intent.getBooleanExtra("active", false);
+                if (active) {
+                    _holeRect = new Rect(
+                        intent.getIntExtra("rect_left",   0),
+                        intent.getIntExtra("rect_top",    0),
+                        intent.getIntExtra("rect_right",  0),
+                        intent.getIntExtra("rect_bottom", 0));
+                } else {
+                    _holeRect = null;
+                }
+                // Re-fire the insets listener so the new state is applied.
+                if (frm != null) frm.requestApplyInsets();
+            }
+        };
+        IntentFilter holeFilter = new IntentFilter(ACTION_HOLE_LAYOUT);
+        if (SDK_INT >= VERSION_CODES.TIRAMISU)
+            registerReceiver(_holeReceiver, holeFilter, Context.RECEIVER_EXPORTED);
+        else
+            registerReceiver(_holeReceiver, holeFilter);
+
         findViewById(R.id.preferences_button).setOnClickListener((l) -> startActivity(new Intent(this, LoriePreferences.class) {{ setAction(Intent.ACTION_MAIN); }}));
         findViewById(R.id.help_button).setOnClickListener((l) -> startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/termux/termux-x11/blob/master/README.md#running-graphical-applications"))));
         findViewById(R.id.exit_button).setOnClickListener((l) -> finish());
@@ -313,6 +367,11 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         unregisterReceiver(receiver);
+        if (_holeReceiver != null) {
+            try { unregisterReceiver(_holeReceiver); }
+            catch (Exception e) { /* not registered or already gone */ }
+            _holeReceiver = null;
+        }
         super.onDestroy();
     }
 

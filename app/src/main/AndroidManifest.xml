@@ -17,6 +17,15 @@
         android:theme="@style/AppTheme"
         android:hardwareAccelerated="true"
         tools:ignore="DataExtractionRules,GoogleAppIndexingWarning">
+
+        <!-- Advertises support for the split-keyboard hole-layout protocol.
+             Compatible IMEs (e.g. the Unexpected Keyboard fork) detect this
+             and forward a hole rect via ACTION_HOLE_LAYOUT so we can resize
+             the X canvas into the transparent center area. -->
+        <meta-data
+            android:name="com.rynobey.uxk.SUPPORTS_HOLE_LAYOUT"
+            android:value="true" />
+
         <activity
             android:name=".MainActivity"
             android:taskAffinity=".MainActivity"
