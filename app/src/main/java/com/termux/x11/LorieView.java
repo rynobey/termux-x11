@@ -583,16 +583,6 @@ public class LorieView extends SurfaceView implements InputStub {
     public LorieView(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) { super(context, attrs, defStyleAttr, defStyleRes); init(); }
 
     private void init() {
-        // Composite this SurfaceView's surface above the activity window's
-        // draw layer (but below other windows like the IME). Per Android
-        // docs this MUST be called before the SurfaceView's containing
-        // window is attached to the WindowManager — i.e. before
-        // setContentView returns — so we do it here in the constructor
-        // path. Without this, transparent overlays above (e.g. the split
-        // keyboard's hole) show the activity bg (black) instead of the X
-        // canvas pixels.
-        setZOrderMediaOverlay(true);
-
         getHolder().addCallback(mSurfaceCallback);
         clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
         nativeInit();
