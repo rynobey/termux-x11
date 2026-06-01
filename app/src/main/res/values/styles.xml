@@ -4,18 +4,6 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowTranslucentStatus">true</item>
         <item name="android:windowTranslucentNavigation">true</item>
-        <!-- Transparent so the LorieView (SurfaceView) underneath can be
-             visible through any transparent overlay window above (e.g. the
-             Unexpected Keyboard split-mode hole). Without this, the
-             activity window's draw layer paints opaque between the IME
-             overlay and the SurfaceView's compositor layer. -->
-        <item name="android:windowBackground">@android:color/transparent</item>
-        <!-- Tells the system this activity isn't fully opaque, so when a
-             large IME overlay (like the fullscreen split keyboard) sits
-             on top, the activity isn't paused as "fully obscured". Without
-             this, the SurfaceView's surface gets destroyed and we see
-             black through the transparent overlay. -->
-        <item name="android:windowIsTranslucent">true</item>
     </style>
     <style name="Preference.Category.Material">
         <item name="android:layout">@layout/preference_category_material</item>

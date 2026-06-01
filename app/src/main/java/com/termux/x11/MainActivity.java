@@ -285,6 +285,14 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.exit_button).setOnClickListener((l) -> finish());
 
         LorieView lorieView = findViewById(R.id.lorieView);
+        // Composite the LorieView's surface above the activity window's
+        // draw layer (but still below other windows like the IME). This
+        // makes the X canvas pixels visible directly through transparent
+        // areas of overlay windows above (e.g. the split-keyboard hole),
+        // without needing the activity itself to be translucent — which
+        // would break orientation handling and reveal the home screen
+        // around the X canvas.
+        lorieView.setZOrderMediaOverlay(true);
         View lorieParent = (View) lorieView.getParent();
 
         mInputHandler = new TouchInputHandler(this, new InputEventSender(lorieView));
