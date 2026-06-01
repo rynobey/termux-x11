@@ -208,6 +208,15 @@ public class MainActivity extends AppCompatActivity {
                 v.setPadding(0, 0, 0, 0);
                 return insets;
             }
+            // Rounded-corner padding only makes sense when no on-screen
+            // keyboard is showing — the keyboard already obscures the
+            // corners it covers, so the extra gap just wastes space.
+            // Android 11+ exposes IME visibility via WindowInsets.Type.ime().
+            if (SDK_INT >= VERSION_CODES.R
+                    && insets.isVisible(WindowInsets.Type.ime())) {
+                v.setPadding(0, 0, 0, 0);
+                return insets;
+            }
             int tl = 0, tr = 0, bl = 0, br = 0;
             if (SDK_INT >= VERSION_CODES.S) {
                 RoundedCorner c;
