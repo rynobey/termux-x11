@@ -204,16 +204,22 @@ public class MainActivity extends AppCompatActivity {
                     screenH - _holeRect.bottom);
                 return insets;
             }
-            if (!prefs.padRoundedCorners.get()) {
-                v.setPadding(0, 0, 0, 0);
-                return insets;
-            }
-            // Rounded-corner padding only makes sense when no on-screen
-            // keyboard is showing — the keyboard already obscures the
-            // corners it covers, so the extra gap just wastes space.
-            // Android 11+ exposes IME visibility via WindowInsets.Type.ime().
+            // Normal IME visible? Pad by its insets so the X canvas shrinks
+            // to fit the visible area above (or beside) the keyboard. Same
+            // shape as the hole path — we own all sizing now since the
+            // activity uses adjustNothing. Gated by the Reseed pref so
+            // users who prefer the IME to overlay (no resize) can opt out.
             if (SDK_INT >= VERSION_CODES.R
                     && insets.isVisible(WindowInsets.Type.ime())) {
+                if (prefs.Reseed.get()) {
+                    Insets imeIns = insets.getInsets(WindowInsets.Type.ime());
+                    v.setPadding(imeIns.left, imeIns.top, imeIns.right, imeIns.bottom);
+                } else {
+                    v.setPadding(0, 0, 0, 0);
+                }
+                return insets;
+            }
+            if (!prefs.padRoundedCorners.get()) {
                 v.setPadding(0, 0, 0, 0);
                 return insets;
             }
@@ -811,7 +817,11 @@ public class MainActivity extends AppCompatActivity {
             prefs.additionalKbdVisible.put(visible);
 
         setTerminalToolbarView();
-        getWindow().setSoftInputMode(prefs.Reseed.get() ? SOFT_INPUT_ADJUST_RESIZE : SOFT_INPUT_ADJUST_PAN);
+        // We use adjustNothing globally and handle IME-driven view sizing
+        // manually in the insets listener (see onCreate). Don't override
+        // here even if the user's Reseed pref toggles — Reseed is now
+        // interpreted in the insets listener instead.
+        getWindow().setSoftInputMode(SOFT_INPUT_ADJUST_NOTHING);
     }
 
     public void toggleExtraKeys() {
@@ -932,7 +942,9 @@ public class MainActivity extends AppCompatActivity {
         else
             window.clearFlags(FLAG_KEEP_SCREEN_ON);
 
-        window.setSoftInputMode(reseed ? SOFT_INPUT_ADJUST_RESIZE : SOFT_INPUT_ADJUST_PAN);
+        // adjustNothing — IME-driven view sizing is handled manually in the
+        // insets listener (gated by the Reseed pref there).
+        window.setSoftInputMode(SOFT_INPUT_ADJUST_NOTHING);
 
         ((FrameLayout) findViewById(android.R.id.content)).getChildAt(0).setFitsSystemWindows(!fullscreen);
     }
