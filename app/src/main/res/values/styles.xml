@@ -4,13 +4,6 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowTranslucentStatus">true</item>
         <item name="android:windowTranslucentNavigation">true</item>
-        <!-- Transparent so the SurfaceView (LorieView) underneath shows
-             through any transparent overlay window above (e.g. the split
-             keyboard's hole). Without this combination, the activity
-             window's draw layer paints opaque between the IME overlay
-             and the SurfaceView's compositor layer. -->
-        <item name="android:windowBackground">@android:color/transparent</item>
-        <item name="android:windowIsTranslucent">true</item>
     </style>
     <style name="Preference.Category.Material">
         <item name="android:layout">@layout/preference_category_material</item>
