@@ -205,20 +205,38 @@ public class MainActivity extends AppCompatActivity {
             // app bounds). Convert screen-px → view-local-px before computing
             // padding, otherwise the values get clamped to garbage and you
             // see no resize at all.
-            if (_holeRect != null && prefs.enableExternalHoleMode.get()) {
+            // Only honour the hole rect while the IME is actually visible.
+            // Without this check, a stale rect from a previous landscape
+            // session keeps narrowing the X canvas after the IME hides
+            // (external keyboard connecting, orientation flip, manual
+            // dismiss) — in the worst case shrinking it to a sliver.
+            boolean imeVisible = SDK_INT >= VERSION_CODES.R
+                && insets.isVisible(WindowInsets.Type.ime());
+            if (!imeVisible) {
+                // Defensively clear so subsequent listener invocations
+                // (e.g. from the rounded-corner branch) don't see a stale
+                // rect either.
+                _holeRect = null;
+            }
+            if (_holeRect != null && prefs.enableExternalHoleMode.get() && imeVisible) {
+                // Only constrain horizontally — the hole rect's top/bottom
+                // are inside the keyboard view's own bounds (e.g. 22dp from
+                // the keyboard's top), which would otherwise push the X
+                // canvas down and leave a black band above the keyboard.
+                // The X canvas should span the full activity height: above
+                // the IME it's fully visible, behind the IME's transparent
+                // centre it shows through, behind the key clusters it's
+                // occluded by the keys (which is what we want).
                 int[] viewOrigin = new int[2];
                 v.getLocationOnScreen(viewOrigin);
                 int viewW = v.getWidth();
-                int viewH = v.getHeight();
                 int padL = Math.max(0, _holeRect.left   - viewOrigin[0]);
-                int padT = Math.max(0, _holeRect.top    - viewOrigin[1]);
                 int padR = Math.max(0, (viewOrigin[0] + viewW) - _holeRect.right);
-                int padB = Math.max(0, (viewOrigin[1] + viewH) - _holeRect.bottom);
                 Log.d("HoleLayout", "applying pad: hole=" + _holeRect
                     + " viewOrigin=(" + viewOrigin[0] + "," + viewOrigin[1] + ")"
-                    + " viewSize=(" + viewW + "x" + viewH + ")"
-                    + " pad=(" + padL + "," + padT + "," + padR + "," + padB + ")");
-                v.setPadding(padL, padT, padR, padB);
+                    + " viewW=" + viewW
+                    + " pad=(" + padL + ",0," + padR + ",0)");
+                v.setPadding(padL, 0, padR, 0);
                 return insets;
             }
             if (!prefs.padRoundedCorners.get()) {
@@ -262,11 +280,20 @@ public class MainActivity extends AppCompatActivity {
                     case Surface.ROTATION_270: cR = 1; break;
                 }
             }
+            // If the IME is showing, the rounded corners on its edge are
+            // already covered by the keyboard. Padding the opposite edge
+            // (to mirror the cutout) would leave a visible gap between the
+            // X canvas and the keyboard, so skip the mirror in that case.
+            int imeL = 0, imeT = 0, imeR = 0, imeB = 0;
+            if (SDK_INT >= VERSION_CODES.R) {
+                Insets ii = insets.getInsets(WindowInsets.Type.ime());
+                imeL = ii.left; imeT = ii.top; imeR = ii.right; imeB = ii.bottom;
+            }
             int padL = 0, padT = 0, padR = 0, padB = 0;
-            if      (cT > 0) padB = Math.max(bl, br);
-            else if (cB > 0) padT = Math.max(tl, tr);
-            else if (cL > 0) padR = Math.max(tr, br);
-            else if (cR > 0) padL = Math.max(tl, bl);
+            if      (cT > 0 && imeB == 0) padB = Math.max(bl, br);
+            else if (cB > 0 && imeT == 0) padT = Math.max(tl, tr);
+            else if (cL > 0 && imeR == 0) padR = Math.max(tr, br);
+            else if (cR > 0 && imeL == 0) padL = Math.max(tl, bl);
             v.setPadding(padL, padT, padR, padB);
             return insets;
         });
@@ -1069,6 +1096,10 @@ public class MainActivity extends AppCompatActivity {
         // wants it always present. (When connected, we leave it to the
         // existing showIMEWhileExternalConnected logic above.)
         if (!connected) maybeAutoShowSoftKeyboard();
+        // Force the insets listener to re-evaluate. Without this, after a
+        // hideSoftInputFromWindow the layout sometimes keeps the previous
+        // padding (stale hole rect), shrinking the X canvas to a sliver.
+        if (frm != null) frm.requestApplyInsets();
     }
 
     /** If the auto-show-soft-keyboard pref is on AND no external (hardware)
