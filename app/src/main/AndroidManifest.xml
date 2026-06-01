@@ -26,6 +26,22 @@
             android:name="com.rynobey.uxk.SUPPORTS_HOLE_LAYOUT"
             android:value="true" />
 
+        <!-- Discovery handle: a no-op receiver declared in manifest with the
+             ACTION_HOLE_LAYOUT intent filter. Required for Android 11+
+             package-visibility rules — without this, the keyboard's
+             getApplicationInfo(GET_META_DATA) call on our package returns
+             NameNotFoundException and the auto-mode detection misclassifies
+             us as non-compatible. The actual broadcast handling stays in the
+             runtime receiver registered in MainActivity.onCreate. -->
+        <receiver
+            android:name=".HoleLayoutDiscoveryReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.rynobey.uxk.HOLE_LAYOUT_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".MainActivity"
             android:taskAffinity=".MainActivity"
