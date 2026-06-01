@@ -18,12 +18,16 @@ on:
   push:
     branches:
       - feat/vortek-integration
+      - feat/**
+      - custom
     paths-ignore:
       - '**.md'
       - 'img/**'
   pull_request:
     branches:
       - feat/vortek-integration
+      - feat/**
+      - custom
       - master
     paths-ignore:
       - '**.md'
